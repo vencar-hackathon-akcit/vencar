@@ -203,12 +203,13 @@ class AssessmentNodes:
     def to_tool_message(outcome: ToolOutcome) -> ToolMessage:
         """Tell the orchestrator how a tool call ended, including failures."""
         call_id = outcome.call["id"]
+        name = outcome.call["name"]
 
         if outcome.error:
             return ToolMessage(
-                content=f"Erro: {outcome.error}", tool_call_id=call_id, status="error"
+                content=f"Erro: {outcome.error}", name=name, tool_call_id=call_id, status="error"
             )
 
         content = to_json(to_plain_data(outcome.result))
 
-        return ToolMessage(content=content, tool_call_id=call_id)
+        return ToolMessage(content=content, name=name, tool_call_id=call_id)

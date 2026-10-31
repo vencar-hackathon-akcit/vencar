@@ -25,16 +25,18 @@ class LangGraphAssessmentAgent:
         model_factory: Callable[[], BaseChatModel],
         specialist_factory: Callable[[], dict[SpecialistName, Specialist]],
         repository: AssessmentRepository,
+        tool_options: dict | None = None,
     ) -> None:
         """Keep factories so the API can start before model credentials are available."""
         self.model_factory = model_factory
         self.specialist_factory = specialist_factory
         self.repository = repository
+        self.tool_options = tool_options or {}
 
     def run(self, request: AgentRequest, sink: EventSink) -> Dossier:
         """Run the graph for one assessment and return its dossier."""
         tools = AssessmentTools(request, self.specialist_factory(), self.repository).build()
-        orchestrator = self.model_factory().bind_tools(tools, strict=True)
+        orchestrator = self.model_factory().bind_tools(tools, **self.tool_options)
         graph = self.build_assessment_graph(AssessmentNodes(request, orchestrator, tools, sink))
 
         return graph.invoke({}, {"recursion_limit": RECURSION_LIMIT})["dossier"]

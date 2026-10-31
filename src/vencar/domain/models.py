@@ -55,6 +55,15 @@ class ScoreBand(StrEnum):
     VERY_GOOD = "very_good"
 
 
+class AssessmentStage(StrEnum):
+    """Stages of an agent run, as shown to the user."""
+
+    RECEIVED = "received"
+    ANALYZING = "analyzing"
+    VALIDATING = "validating"
+    FINISHED = "finished"
+
+
 class EventKind(StrEnum):
     """Kinds of entries in an assessment's history."""
 
@@ -81,6 +90,14 @@ class SpecialistName(StrEnum):
 
     BODYWORK = "agente_funilaria"
     INTERIOR = "agente_tapecaria"
+
+
+class VehicleMatchStatus(StrEnum):
+    """Whether the photos agree with the vehicle the user informed."""
+
+    MATCHES = "matches"
+    MISMATCH = "mismatch"
+    CANNOT_DETERMINE = "cannot_determine"
 
 
 class VehicleData(DomainModel):
@@ -155,8 +172,18 @@ class Conflict(DomainModel):
     evidence_ids: list[str]
 
 
+class VehicleMatch(DomainModel):
+    """Check of the informed make, model and year against the photos."""
+
+    status: VehicleMatchStatus
+    reason: str
+    evidence_ids: list[str]
+
+
 class SpecialistFindings(DomainModel):
     """Structured output requested from a specialist agent."""
+
+    vehicle_match: VehicleMatch
 
     photo_assessments: list[PhotoAssessment]
     damages: list[Damage]
@@ -258,6 +285,19 @@ class AgentEvent(DomainModel):
     output: object | None = None
     created_at: datetime
     hash: str
+
+
+class AssessmentProgress(DomainModel):
+    """Lightweight view of a run, meant to be polled."""
+
+    id: str
+    status: AssessmentStatus
+    stage: AssessmentStage
+    last_action: str | None
+    is_finished: bool
+    poll_after_ms: int | None
+    error: str | None
+    updated_at: datetime
 
 
 class AssessmentDetails(DomainModel):

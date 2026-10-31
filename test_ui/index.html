@@ -58,7 +58,6 @@
 </form>
 <script>
 const API = "/api/v1/assessments";
-const POLL_INTERVAL_MS = 1500;
 const $ = (id) => document.getElementById(id);
 let currentId = null;
 let timer = null;
@@ -128,10 +127,16 @@ function render(data) {
 async function poll(id) {
   clearTimeout(timer);
   try {
-    const data = await request(`${API}/${id}`);
+    const progress = await request(`${API}/${id}/status`);
     if (id !== currentId) return;
-    render(data);
-    if (data.status === "processing") timer = setTimeout(() => poll(id), POLL_INTERVAL_MS);
+    if (!progress.isFinished) {
+      $("result").replaceChildren();
+      add($("result"), "h2", "Status");
+      add($("result"), "p", `${progress.stage}${progress.lastAction ? ` · ${progress.lastAction}` : ""}`);
+      timer = setTimeout(() => poll(id), progress.pollAfterMs);
+      return;
+    }
+    render(await request(`${API}/${id}`));
   } catch (error) {
     $("error").textContent = error.message;
   }

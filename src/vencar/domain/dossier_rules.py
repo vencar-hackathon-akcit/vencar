@@ -12,6 +12,7 @@ from vencar.domain.models import (
     Hypothesis,
     PhotoAssessment,
     SpecialistReport,
+    VehicleMatchStatus,
 )
 from vencar.domain.scoring import calculate_score
 
@@ -138,6 +139,20 @@ class DossierRules:
         return Validated(hypotheses, warnings)
 
     @staticmethod
+    def find_vehicle_mismatch(
+        reports: list[SpecialistReport], photo_ids: set[str], unusable: set[str]
+    ) -> list[Conflict]:
+        """Turn the first mismatch based on a usable photo into a single conflict."""
+        for report in reports:
+            match = report.findings.vehicle_match
+            valid = [item for item in match.evidence_ids if item in photo_ids - unusable]
+
+            if match.status == VehicleMatchStatus.MISMATCH and valid:
+                return [Conflict(description=match.reason, evidence_ids=valid)]
+
+        return []
+
+    @staticmethod
     def find_evaluated_categories(
         reports: list[SpecialistReport], photo_ids: set[str]
     ) -> set[Category]:
@@ -230,7 +245,9 @@ class DossierRules:
 
         damages = DossierRules.validate_damages(reports, photo_ids, unusable)
         hypotheses = DossierRules.validate_hypotheses(reports, known, unusable)
-        conflicts = [conflict for report in reports for conflict in report.findings.conflicts]
+        mismatch = DossierRules.find_vehicle_mismatch(reports, photo_ids, unusable)
+        reported = [conflict for report in reports for conflict in report.findings.conflicts]
+        conflicts = [*mismatch, *reported]
         limitations = [item for report in reports for item in report.findings.limitations]
         evaluated = DossierRules.find_evaluated_categories(reports, photo_ids)
 

@@ -17,6 +17,7 @@ UNO = {
 def findings(**overrides) -> dict:
     """Build well-founded findings that a scenario can override."""
     base = {
+        "vehicle_match": {"status": "matches", "reason": "Condiz", "evidence_ids": ["P1"]},
         "photo_assessments": [{"evidence_id": "P1", "usable": True, "reason": "nitida"}],
         "damages": [
             {

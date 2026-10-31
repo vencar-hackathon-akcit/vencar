@@ -104,12 +104,7 @@ class CaseContentBuilder:
             data = base64.standard_b64encode(Path(photo.path).read_bytes()).decode("utf-8")
             blocks.append({"type": "text", "text": f"Evidencia {photo.evidence_id} (foto):"})
 
-            blocks.append(
-                {
-                    "type": "image",
-                    "source": {"type": "base64", "media_type": JPEG_MEDIA_TYPE, "data": data},
-                }
-            )
+            blocks.append({"type": "image", "base64": data, "mime_type": JPEG_MEDIA_TYPE})
 
         return blocks
 

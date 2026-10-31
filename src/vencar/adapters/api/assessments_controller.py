@@ -15,7 +15,13 @@ from vencar.application.use_cases.create_assessment import CreateAssessment
 from vencar.application.use_cases.read_assessments import ReadAssessments
 from vencar.application.use_cases.run_assessment import RunAssessment
 from vencar.domain.errors import ErrorCode, VencarError
-from vencar.domain.models import Assessment, AssessmentStatus, PhotoUpload, VehicleData
+from vencar.domain.models import (
+    Assessment,
+    AssessmentProgress,
+    AssessmentStatus,
+    PhotoUpload,
+    VehicleData,
+)
 from vencar.utils.media import JPEG_MEDIA_TYPE
 
 
@@ -103,6 +109,13 @@ def create_assessments_router(
     def get_assessment(assessment_id: str, user: str = Depends(current_user)) -> AssessmentDetail:
         """Return an assessment with its history and integrity verdict."""
         return AssessmentDetail.from_details(read.detail(assessment_id, user))
+
+    @router.get("/{assessment_id}/status", response_model=AssessmentProgress)
+    def get_assessment_status(
+        assessment_id: str, user: str = Depends(current_user)
+    ) -> AssessmentProgress:
+        """Return the progress of an assessment, for the frontend to poll."""
+        return read.progress(assessment_id, user)
 
     @router.get("/{assessment_id}/photos/{photo_id}")
     def get_photo(
