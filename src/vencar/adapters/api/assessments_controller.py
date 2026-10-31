@@ -16,8 +16,7 @@ from vencar.application.use_cases.read_assessments import ReadAssessments
 from vencar.application.use_cases.run_assessment import RunAssessment
 from vencar.domain.errors import ErrorCode, VencarError
 from vencar.domain.models import Assessment, AssessmentStatus, PhotoUpload, VehicleData
-
-JPEG_MEDIA_TYPE = "image/jpeg"
+from vencar.utils.media import JPEG_MEDIA_TYPE
 
 
 async def read_uploads(files: list[UploadFile]) -> list[PhotoUpload]:

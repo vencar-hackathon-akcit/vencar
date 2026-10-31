@@ -1,11 +1,11 @@
 import io
-import uuid
 from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from vencar.domain.errors import ErrorCode, VencarError
 from vencar.domain.models import Photo, PhotoUpload
+from vencar.utils.ids import new_id
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 MAX_IMAGE_EDGE = 1568
@@ -41,7 +41,7 @@ class LocalPhotoStorage:
         folder.mkdir(parents=True, exist_ok=True)
         image = ImageOps.exif_transpose(Image.open(io.BytesIO(upload.content))).convert("RGB")
         image.thumbnail((MAX_IMAGE_EDGE, MAX_IMAGE_EDGE))
-        photo_id = uuid.uuid4().hex
+        photo_id = new_id()
         path = folder / f"{photo_id}.jpg"
         image.save(path, "JPEG", quality=85)
 

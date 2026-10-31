@@ -1,5 +1,4 @@
 import base64
-import json
 from pathlib import Path
 from typing import Protocol
 
@@ -17,9 +16,10 @@ from vencar.domain.models import (
     SpecialistReport,
     VehicleData,
 )
+from vencar.utils.media import JPEG_MEDIA_TYPE
+from vencar.utils.serialization import to_json
 
 MAX_ATTEMPTS = 2
-JPEG_MEDIA_TYPE = "image/jpeg"
 
 
 def photo_blocks(photos: list[Photo]) -> list[dict]:
@@ -42,7 +42,7 @@ def photo_blocks(photos: list[Photo]) -> list[dict]:
 
 def build_case_content(photos: list[Photo], case: dict) -> list[dict]:
     """Combine the photos and the case data into one message for a model."""
-    case_text = "Dados do caso:\n" + json.dumps(case, ensure_ascii=False)
+    case_text = "Dados do caso:\n" + to_json(case)
 
     return [*photo_blocks(photos), {"type": "text", "text": case_text}]
 

@@ -2,6 +2,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from vencar.utils.text import split_csv
+
 
 class Settings(BaseSettings):
     """Application settings read from the environment or a .env file."""
@@ -15,8 +17,8 @@ class Settings(BaseSettings):
 
     def tokens(self) -> dict[str, str]:
         """Parse the token:user pairs allowed to access the API."""
-        return dict(pair.split(":", 1) for pair in self.vencar_api_tokens.split(",") if ":" in pair)
+        return dict(pair.split(":", 1) for pair in split_csv(self.vencar_api_tokens) if ":" in pair)
 
     def cors_origins(self) -> list[str]:
         """Parse the origins allowed to call the API from a browser."""
-        return [origin.strip() for origin in self.vencar_cors_origins.split(",") if origin.strip()]
+        return split_csv(self.vencar_cors_origins)

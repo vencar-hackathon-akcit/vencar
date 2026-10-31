@@ -1,8 +1,5 @@
-import hashlib
 import json
 import sqlite3
-import uuid
-from datetime import UTC, datetime
 from pathlib import Path
 
 from vencar.domain.models import (
@@ -14,6 +11,10 @@ from vencar.domain.models import (
     Photo,
     VehicleData,
 )
+from vencar.utils.hashing import sha256_hex
+from vencar.utils.ids import new_id
+from vencar.utils.serialization import to_json
+from vencar.utils.time import utc_now
 
 GENESIS_HASH = "0" * 64
 IDLE_STATES = (
@@ -68,11 +69,6 @@ END;
 """
 
 
-def utc_now() -> str:
-    """Return the current UTC time as an ISO 8601 string."""
-    return datetime.now(UTC).isoformat()
-
-
 def event_hash(
     previous_hash: str,
     assessment_id: str,
@@ -88,7 +84,7 @@ def event_hash(
         [previous_hash, assessment_id, run, kind, name, input_json, output_json, created_at]
     )
 
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return sha256_hex(payload)
 
 
 class SqliteAssessmentRepository:
@@ -125,7 +121,7 @@ class SqliteAssessmentRepository:
 
     def create(self, owner: str, vehicle: VehicleData, description: str) -> Assessment:
         """Create an assessment in the processing state."""
-        assessment_id = uuid.uuid4().hex
+        assessment_id = new_id()
         now = utc_now()
 
         with self.connect() as connection:
@@ -197,8 +193,8 @@ class SqliteAssessmentRepository:
 
     def append_event(self, assessment_id: str, run: int, event: NewEvent) -> None:
         """Append an event linked by hash to the previous event of the assessment."""
-        input_json = json.dumps(event.input, ensure_ascii=False, default=str)
-        output_json = json.dumps(event.output, ensure_ascii=False, default=str)
+        input_json = to_json(event.input)
+        output_json = to_json(event.output)
         created_at = utc_now()
         kind = event.kind.value
         name = str(event.name)

@@ -1,11 +1,9 @@
-import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import NamedTuple
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import Runnable
 from langchain_core.tools import StructuredTool
-from pydantic import BaseModel
 
 from vencar.adapters.agents.specialist_catalog import ORCHESTRATOR_PROMPT
 from vencar.adapters.agents.specialists import build_case_content
@@ -25,6 +23,7 @@ from vencar.domain.models import (
     NewEvent,
     SpecialistReport,
 )
+from vencar.utils.serialization import to_json, to_plain_data
 
 NUDGE_MESSAGE = "Termine chamando a ferramenta submit_conclusion."
 NO_CONCLUSION_WARNING = "O orquestrador encerrou sem registrar uma conclusao."
@@ -52,11 +51,6 @@ def describe_turn(message: AIMessage) -> str:
     return "\n".join(part for part in parts if part)
 
 
-def to_serializable(result: object) -> object:
-    """Turn a tool result into plain data for the model and the history."""
-    return result.model_dump(mode="json") if isinstance(result, BaseModel) else result
-
-
 def to_tool_message(outcome: ToolOutcome) -> ToolMessage:
     """Tell the orchestrator how a tool call ended, including failures."""
     call_id = outcome.call["id"]
@@ -64,7 +58,7 @@ def to_tool_message(outcome: ToolOutcome) -> ToolMessage:
     if outcome.error:
         return ToolMessage(content=f"Erro: {outcome.error}", tool_call_id=call_id, status="error")
 
-    content = json.dumps(to_serializable(outcome.result), ensure_ascii=False)
+    content = to_json(to_plain_data(outcome.result))
 
     return ToolMessage(content=content, tool_call_id=call_id)
 
@@ -159,7 +153,7 @@ class AssessmentNodes:
 
     def record_tool_call(self, outcome: ToolOutcome) -> None:
         """Add a tool call, with its parameters and result, to the history."""
-        output = {"error": outcome.error} if outcome.error else to_serializable(outcome.result)
+        output = {"error": outcome.error} if outcome.error else to_plain_data(outcome.result)
 
         self.sink(
             NewEvent(
