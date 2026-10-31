@@ -89,7 +89,11 @@ class AssessmentTools:
             selected = [photos[item] for item in photo_ids]
 
             return specialist.inspect(
-                self.request.vehicle, self.request.description, selected, focus
+                self.request.vehicle,
+                self.request.description,
+                self.request.answers,
+                selected,
+                focus,
             )
 
         return StructuredTool.from_function(

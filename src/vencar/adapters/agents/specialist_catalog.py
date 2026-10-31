@@ -65,6 +65,7 @@ class SpecialistCatalog:
     @staticmethod
     def create_specialists(
         model_factory: Callable[[], BaseChatModel],
+        fallback_factory: Callable[[], BaseChatModel] | None = None,
     ) -> dict[SpecialistName, Specialist]:
         """Create one agent for each specialist in the catalog."""
         return {
@@ -73,6 +74,7 @@ class SpecialistCatalog:
                 model_factory(),
                 build_specialist_prompt(item.identity),
                 set(item.allowed_categories),
+                fallback_factory() if fallback_factory else None,
             )
             for item in SPECIALISTS
         }

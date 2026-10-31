@@ -53,12 +53,18 @@ def create_real_agent(
         """Create the chat model when a run starts."""
         return provider.create_model(settings.model_name(), settings.provider_api_key())
 
+    def fallback_model_factory() -> BaseChatModel:
+        """Create the model used when the main one is unavailable."""
+        return provider.create_model(settings.fallback_model_name(), settings.provider_api_key())
+
+    fallback_factory = fallback_model_factory if settings.fallback_model_name() else None
+
     def specialist_factory() -> dict[SpecialistName, Specialist]:
         """Create the specialist agents when a run starts."""
-        return SpecialistCatalog.create_specialists(model_factory)
+        return SpecialistCatalog.create_specialists(model_factory, fallback_factory)
 
     return LangGraphAssessmentAgent(
-        model_factory, specialist_factory, repository, provider.tool_options
+        model_factory, specialist_factory, repository, provider.tool_options, fallback_factory
     )
 
 

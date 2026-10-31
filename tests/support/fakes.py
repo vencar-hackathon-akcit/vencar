@@ -35,8 +35,9 @@ class FakeSpecialist:
         self.findings = findings
         self.calls = []
 
-    def inspect(self, vehicle, description, photos, focus) -> SpecialistReport:
+    def inspect(self, vehicle, description, answers, photos, focus) -> SpecialistReport:
         """Record the call and return the findings."""
         self.calls.append([photo.evidence_id for photo in photos])
+        self.answers = answers
 
         return SpecialistReport(specialist=self.name, findings=SpecialistFindings(**self.findings))

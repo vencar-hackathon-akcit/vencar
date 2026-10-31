@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from vencar.utils.ids import new_id
 from vencar.utils.serialization import to_json
 from vencar.utils.time import utc_now
 
+INTERRUPTED_MESSAGE = "Processamento interrompido; envie uma nova resposta para tentar de novo."
 GENESIS_HASH = "0" * 64
 IDLE_STATES = (
     AssessmentStatus.COMPLETED,
@@ -78,6 +80,10 @@ class SqliteAssessmentRepository:
 
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            columns = [row["name"] for row in connection.execute("PRAGMA table_info(assessments)")]
+
+            if "runner_pid" not in columns:
+                connection.execute("ALTER TABLE assessments ADD COLUMN runner_pid INTEGER")
 
     def connect(self) -> sqlite3.Connection:
         """Open one connection per operation, since agents run in worker threads."""
@@ -109,8 +115,9 @@ class SqliteAssessmentRepository:
         with self.connect() as connection:
             connection.execute(
                 "INSERT INTO assessments "
-                "(id, owner, plate, vehicle, description, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "(id, owner, plate, vehicle, description, status, runner_pid, created_at, "
+                "updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     assessment_id,
                     owner,
@@ -118,6 +125,7 @@ class SqliteAssessmentRepository:
                     vehicle.model_dump_json(),
                     description,
                     AssessmentStatus.PROCESSING,
+                    os.getpid(),
                     now,
                     now,
                 ),
@@ -287,12 +295,14 @@ class SqliteAssessmentRepository:
         with self.connect() as connection:
             cursor = connection.execute(
                 "UPDATE assessments "
-                "SET status = ?, plate = ?, vehicle = ?, error = NULL, updated_at = ? "
+                "SET status = ?, plate = ?, vehicle = ?, error = NULL, runner_pid = ?, "
+                "updated_at = ? "
                 f"WHERE id = ? AND status IN ({marks})",
                 (
                     AssessmentStatus.PROCESSING,
                     vehicle.plate,
                     vehicle.model_dump_json(),
+                    os.getpid(),
                     utc_now(),
                     assessment_id,
                     *IDLE_STATES,
@@ -319,18 +329,35 @@ class SqliteAssessmentRepository:
                 (AssessmentStatus.FAILED, error, utc_now(), assessment_id),
             )
 
+    @staticmethod
+    def process_is_running(pid: int | None) -> bool:
+        """Tell whether another live process may still be working on a run."""
+        if pid is None or pid == os.getpid():
+            return False
+
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+
+        return True
+
     def fail_interrupted(self) -> None:
-        """Fail assessments left in processing by a previous shutdown."""
+        """Fail only the runs whose server has stopped, leaving other live servers alone."""
         with self.connect() as connection:
-            connection.execute(
-                "UPDATE assessments SET status = ?, error = ?, updated_at = ? WHERE status = ?",
-                (
-                    AssessmentStatus.FAILED,
-                    "Processamento interrompido; envie uma nova resposta para tentar de novo.",
-                    utc_now(),
-                    AssessmentStatus.PROCESSING,
-                ),
-            )
+            rows = connection.execute(
+                "SELECT id, runner_pid FROM assessments WHERE status = ?",
+                (AssessmentStatus.PROCESSING,),
+            ).fetchall()
+
+            for row in rows:
+                if not self.process_is_running(row["runner_pid"]):
+                    connection.execute(
+                        "UPDATE assessments SET status = ?, error = ?, updated_at = ? WHERE id = ?",
+                        (AssessmentStatus.FAILED, INTERRUPTED_MESSAGE, utc_now(), row["id"]),
+                    )
 
     def previous_dossiers(self, plate: str, owner: str, exclude_id: str) -> list[Assessment]:
         """Return the owner's earlier finished assessments of the same plate."""

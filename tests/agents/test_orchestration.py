@@ -67,6 +67,7 @@ def test_agent_can_ask_the_user_and_resume_with_the_answer(harness) -> None:
     assert second["status"] == "completed"
     assert [item["id"] for item in second["dossier"]["evidence"]] == ["E1", "R1", "P1"]
     assert "Nao houve" in harness.model.received[-1][1].content[-1]["text"]
+    assert harness.bodywork.answers == ["Nao houve"]
 
 
 def test_orchestrator_skipping_specialists_cannot_produce_a_score(harness) -> None:

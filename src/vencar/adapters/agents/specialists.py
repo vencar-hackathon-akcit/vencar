@@ -5,6 +5,7 @@ from typing import Protocol
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import Runnable
 from pydantic import ValidationError
 
 from vencar.domain.errors import ErrorCode, VencarError
@@ -26,7 +27,12 @@ class Specialist(Protocol):
     """Agent that inspects photos within one area of expertise."""
 
     def inspect(
-        self, vehicle: VehicleData, description: str, photos: list[Photo], focus: str
+        self,
+        vehicle: VehicleData,
+        description: str,
+        answers: list[str],
+        photos: list[Photo],
+        focus: str,
     ) -> SpecialistReport:
         """Inspect the photos and return structured findings."""
 
@@ -40,12 +46,22 @@ class ChatSpecialist:
         model: BaseChatModel,
         prompt: str,
         allowed_categories: set[Category],
+        fallback_model: BaseChatModel | None = None,
     ) -> None:
-        """Configure the specialist's identity, model, instructions and scope."""
+        """Configure the specialist's identity, models, instructions and scope."""
         self.name = name
-        self.model = model.with_structured_output(SpecialistFindings, method="json_schema")
+        self.model = self.structured(model)
+
+        if fallback_model is not None:
+            self.model = self.model.with_fallbacks([self.structured(fallback_model)])
+
         self.prompt = prompt
         self.allowed_categories = allowed_categories
+
+    @staticmethod
+    def structured(model: BaseChatModel) -> Runnable:
+        """Make a model answer with the specialist's findings schema."""
+        return model.with_structured_output(SpecialistFindings, method="json_schema")
 
     def restrict_scope(self, findings: SpecialistFindings) -> SpecialistFindings:
         """Remove anything outside the categories this specialist may evaluate."""
@@ -63,10 +79,22 @@ class ChatSpecialist:
         )
 
     def inspect(
-        self, vehicle: VehicleData, description: str, photos: list[Photo], focus: str
+        self,
+        vehicle: VehicleData,
+        description: str,
+        answers: list[str],
+        photos: list[Photo],
+        focus: str,
     ) -> SpecialistReport:
         """Call the model, retrying once when the output is not valid."""
-        case = {"vehicle": vehicle.model_dump(), "E1_description": description, "focus": focus}
+        numbered_answers = enumerate(answers, start=1)
+
+        case = {
+            "vehicle": vehicle.model_dump(),
+            "E1_description": description,
+            "answers": {f"R{index}": answer for index, answer in numbered_answers},
+            "focus": focus,
+        }
 
         content = CaseContentBuilder.build_case_content(photos, case)
 
