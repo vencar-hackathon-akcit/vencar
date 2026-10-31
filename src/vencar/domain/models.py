@@ -165,9 +165,17 @@ class Hypothesis(DomainModel):
     what_would_confirm: str
 
 
+class ConflictTopic(StrEnum):
+    """What a conflict is about."""
+
+    VEHICLE_IDENTITY = "vehicle_identity"
+    OTHER = "other"
+
+
 class Conflict(DomainModel):
     """Disagreement between pieces of evidence."""
 
+    topic: ConflictTopic = ConflictTopic.OTHER
     description: str
     evidence_ids: list[str]
 
@@ -207,6 +215,7 @@ class AgentConclusion(DomainModel):
     recommendation: str
     needs_user_input: bool
     questions: list[str]
+    follow_up_questions: list[str]
     requires_in_person_inspection: bool
     inspection_reason: str
 
@@ -226,6 +235,7 @@ class VehicleScore(DomainModel):
     value: int
     band: ScoreBand
     is_partial: bool
+    is_provisional: bool = True
     coverage_percent: int
     categories: list[CategoryScore]
 

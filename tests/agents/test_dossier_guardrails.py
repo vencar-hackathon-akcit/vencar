@@ -81,3 +81,48 @@ def test_unknown_vehicle_match_does_not_block_completion(harness) -> None:
     result = harness.submit([bodywork(), conclude()])
 
     assert result["status"] == "completed"
+
+
+def test_question_without_specialists_waits_for_the_user(harness) -> None:
+    """Asking for a correct photo keeps the case open instead of inconclusive."""
+    result = harness.submit([conclude(needs_user_input=True, questions=["Envie outra foto."])])
+
+    assert result["status"] == "needs_input"
+    assert result["dossier"]["questions"] == ["Envie outra foto."]
+
+
+def test_follow_up_questions_do_not_block_completion(harness) -> None:
+    """Useful but unnecessary questions become optional pending information."""
+    result = harness.submit([bodywork(), conclude(follow_up_questions=["Houve airbag?"])])
+
+    assert result["status"] == "completed"
+    assert result["dossier"]["questions"] == []
+    assert result["dossier"]["pendingInformation"] == ["Houve airbag?"]
+
+
+def test_conflict_replaces_the_agents_own_question(harness) -> None:
+    """The user is asked about a conflict once, and other questions become optional."""
+    harness.bodywork.findings = findings(vehicle_match=MISMATCH)
+    conclusion = conclude(needs_user_input=True, questions=["O modelo esta correto?"])
+
+    dossier = harness.submit([bodywork(), conclusion])["dossier"]
+
+    assert dossier["questions"] == ["Esclareca o conflito: Painel de outra epoca"]
+    assert dossier["pendingInformation"] == ["O modelo esta correto?"]
+
+
+def test_score_only_appears_on_completed_assessments(harness) -> None:
+    """No number is shown while the vehicle's identity is in doubt."""
+    harness.bodywork.findings = findings(vehicle_match=MISMATCH)
+
+    assert harness.submit([bodywork(), conclude()])["dossier"]["score"] is None
+
+
+def test_identity_conflict_is_not_repeated(harness) -> None:
+    """An identity conflict from a specialist does not duplicate the mismatch."""
+    repeated = {"topic": "vehicle_identity", "description": "Outro carro", "evidence_ids": ["P1"]}
+    harness.bodywork.findings = findings(vehicle_match=MISMATCH, conflicts=[repeated])
+
+    dossier = harness.submit([bodywork(), conclude()])["dossier"]
+
+    assert [item["description"] for item in dossier["conflicts"]] == ["Painel de outra epoca"]

@@ -58,6 +58,7 @@ def conclude(**overrides) -> AIMessage:
         "recommendation": "Levar a oficina",
         "needs_user_input": False,
         "questions": [],
+        "follow_up_questions": [],
         "requires_in_person_inspection": False,
         "inspection_reason": "",
     }

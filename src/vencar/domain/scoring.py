@@ -20,7 +20,10 @@ REGULAR_MAX_SCORE = 70
 MAX_GRADE = 10.0
 MAX_SCORE_PER_GRADE_POINT = 10
 FULL_COVERAGE_PERCENT = 100
-SEVERITY_PENALTY = {Severity.MINOR: 1.0, Severity.MODERATE: 2.5, Severity.SEVERE: 5.0}
+WORST_SEVERITY_GRADE = {Severity.MINOR: 8.5, Severity.MODERATE: 6.0, Severity.SEVERE: 3.0}
+EXTRA_DAMAGE_PENALTY = 0.25
+MAX_EXTRA_PENALTY = 1.0
+SCORE_IS_PROVISIONAL = True
 NOT_EVALUATED_REASON = "Sem evidencia suficiente para avaliar esta categoria."
 
 
@@ -36,14 +39,20 @@ def band_for(value: int) -> ScoreBand:
 
 
 def grade_category(category: Category, damages: list[Damage]) -> float:
-    """Grade a category from 0 to 10, ignoring low-confidence findings."""
-    penalty = sum(
-        SEVERITY_PENALTY[item.severity]
+    """Grade a category by its worst damage, so the number of items listed matters little."""
+    severities = [
+        item.severity
         for item in damages
         if item.category == category and item.confidence != Confidence.LOW
-    )
+    ]
 
-    return max(0.0, MAX_GRADE - penalty)
+    if not severities:
+        return MAX_GRADE
+
+    worst = min(WORST_SEVERITY_GRADE[item] for item in severities)
+    extra_penalty = min(EXTRA_DAMAGE_PENALTY * (len(severities) - 1), MAX_EXTRA_PENALTY)
+
+    return max(0.0, worst - extra_penalty)
 
 
 def calculate_score(damages: list[Damage], evaluated: set[Category]) -> VehicleScore | None:
@@ -86,6 +95,7 @@ def calculate_score(damages: list[Damage], evaluated: set[Category]) -> VehicleS
         value=value,
         band=band_for(value),
         is_partial=coverage < FULL_COVERAGE_PERCENT,
+        is_provisional=SCORE_IS_PROVISIONAL,
         coverage_percent=coverage,
         categories=categories,
     )

@@ -31,7 +31,12 @@ class ConclusionArgs(BaseModel):
     summary: str = Field(description="Resumo em linguagem simples, sem jargao.")
     recommendation: str = Field(description="Proxima etapa recomendada.")
     needs_user_input: bool
-    questions: list[str] = Field(description="Perguntas objetivas ao usuario; vazia se nao houver.")
+    questions: list[str] = Field(
+        description="Perguntas sem as quais nao e possivel concluir; vazia se nao houver."
+    )
+    follow_up_questions: list[str] = Field(
+        description="Perguntas uteis que nao impedem concluir; vazia se nao houver."
+    )
     requires_in_person_inspection: bool
     inspection_reason: str = Field(
         description="Motivo da inspecao presencial; vazio se nao houver."
@@ -108,6 +113,7 @@ class AssessmentTools:
         recommendation: str,
         needs_user_input: bool,
         questions: list[str],
+        follow_up_questions: list[str],
         requires_in_person_inspection: bool,
         inspection_reason: str,
     ) -> AgentConclusion:
@@ -117,6 +123,7 @@ class AssessmentTools:
             recommendation=recommendation,
             needs_user_input=needs_user_input,
             questions=questions,
+            follow_up_questions=follow_up_questions,
             requires_in_person_inspection=requires_in_person_inspection,
             inspection_reason=inspection_reason,
         )

@@ -6,6 +6,7 @@ from vencar.domain.models import (
     AssessmentStatus,
     Category,
     Conflict,
+    ConflictTopic,
     Damage,
     Dossier,
     Evidence,
@@ -19,6 +20,7 @@ from vencar.domain.scoring import calculate_score
 DEFAULT_HUMAN_REASON = "Resultados gerados por IA precisam de validacao de um profissional."
 NEW_PHOTO_QUESTION = "Envie novas fotos nitidas e bem iluminadas do veiculo."
 CONFLICT_REASON = "Ha informacoes conflitantes que precisam ser esclarecidas."
+NEEDS_ANSWER_REASON = "O agente precisa de mais informacoes para concluir."
 NO_SPECIALIST_REASON = "Nenhum agente especialista foi acionado."
 NO_EVIDENCE_REASON = "Nao ha evidencia suficiente para avaliar nenhuma categoria."
 
@@ -148,7 +150,13 @@ class DossierRules:
             valid = [item for item in match.evidence_ids if item in photo_ids - unusable]
 
             if match.status == VehicleMatchStatus.MISMATCH and valid:
-                return [Conflict(description=match.reason, evidence_ids=valid)]
+                return [
+                    Conflict(
+                        topic=ConflictTopic.VEHICLE_IDENTITY,
+                        description=match.reason,
+                        evidence_ids=valid,
+                    )
+                ]
 
         return []
 
@@ -182,6 +190,9 @@ class DossierRules:
         evaluated: set[Category],
     ) -> tuple[AssessmentStatus, str]:
         """Decide the final status, checking the most blocking situations first."""
+        if not reports and conclusion and conclusion.questions:
+            return AssessmentStatus.NEEDS_INPUT, NEEDS_ANSWER_REASON
+
         if not reports:
             return AssessmentStatus.INCONCLUSIVE, NO_SPECIALIST_REASON
 
@@ -192,10 +203,7 @@ class DossierRules:
             return AssessmentStatus.NEEDS_INPUT, CONFLICT_REASON
 
         if conclusion and conclusion.needs_user_input and conclusion.questions:
-            return (
-                AssessmentStatus.NEEDS_INPUT,
-                "O agente precisa de mais informacoes para concluir.",
-            )
+            return AssessmentStatus.NEEDS_INPUT, NEEDS_ANSWER_REASON
 
         if not evaluated:
             return AssessmentStatus.INCONCLUSIVE, NO_EVIDENCE_REASON
@@ -210,16 +218,26 @@ class DossierRules:
         conflicts: list[Conflict],
         has_reports: bool,
     ) -> list[str]:
-        """Combine the agent's questions with those the rules require."""
-        questions = list(conclusion.questions) if conclusion else []
+        """Ask what blocks the assessment, with required questions replacing the agent's own."""
+        if has_reports and DossierRules.all_photos_unusable(photo_ids, unusable):
+            return [NEW_PHOTO_QUESTION]
 
-        if not has_reports:
-            return questions
+        if has_reports and conflicts:
+            return [f"Esclareca o conflito: {item.description}" for item in conflicts]
 
-        if DossierRules.all_photos_unusable(photo_ids, unusable):
-            return [*questions, NEW_PHOTO_QUESTION]
+        return list(conclusion.questions) if conclusion else []
 
-        return [*questions, *(f"Esclareca o conflito: {item.description}" for item in conflicts)]
+    @staticmethod
+    def build_pending_information(
+        conclusion: AgentConclusion | None, questions: list[str]
+    ) -> list[str]:
+        """Keep the agent's other questions as optional, without blocking the result."""
+        if conclusion is None:
+            return []
+
+        candidates = [*conclusion.questions, *conclusion.follow_up_questions]
+
+        return list(dict.fromkeys(item for item in candidates if item not in questions))
 
     @staticmethod
     def human_validation_reason(conclusion: AgentConclusion | None) -> str:
@@ -246,7 +264,12 @@ class DossierRules:
         damages = DossierRules.validate_damages(reports, photo_ids, unusable)
         hypotheses = DossierRules.validate_hypotheses(reports, known, unusable)
         mismatch = DossierRules.find_vehicle_mismatch(reports, photo_ids, unusable)
-        reported = [conflict for report in reports for conflict in report.findings.conflicts]
+        reported = [
+            conflict
+            for report in reports
+            for conflict in report.findings.conflicts
+            if conflict.topic != ConflictTopic.VEHICLE_IDENTITY
+        ]
         conflicts = [*mismatch, *reported]
         limitations = [item for report in reports for item in report.findings.limitations]
         evaluated = DossierRules.find_evaluated_categories(reports, photo_ids)
@@ -255,6 +278,10 @@ class DossierRules:
             reports, photo_ids, unusable, conflicts, conclusion, evaluated
         )
         no_specialist = [NO_SPECIALIST_REASON] if not reports else []
+        questions = DossierRules.build_questions(
+            conclusion, photo_ids, unusable, conflicts, bool(reports)
+        )
+        completed = status == AssessmentStatus.COMPLETED
 
         return Dossier(
             status=status,
@@ -265,12 +292,11 @@ class DossierRules:
             damages=damages.items,
             hypotheses=hypotheses.items,
             conflicts=conflicts,
-            questions=DossierRules.build_questions(
-                conclusion, photo_ids, unusable, conflicts, bool(reports)
-            ),
+            questions=questions,
+            pending_information=DossierRules.build_pending_information(conclusion, questions),
             limitations=limitations,
             warnings=[*warnings, *damages.warnings, *hypotheses.warnings, *no_specialist],
-            score=calculate_score(damages.items, evaluated),
+            score=calculate_score(damages.items, evaluated) if completed else None,
             summary=conclusion.summary if conclusion else "",
             recommendation=conclusion.recommendation if conclusion else "",
             human_validation_reason=DossierRules.human_validation_reason(conclusion),

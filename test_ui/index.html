@@ -90,11 +90,11 @@ function addList(title, items) {
 function renderScore(score) {
   add($("result"), "h2", "Score");
   if (!score) {
-    add($("result"), "p", "Sem score: não há evidência suficiente.");
+    add($("result"), "p", "Sem score: a avaliação ainda não foi concluída.");
     return;
   }
   add($("result"), "div", `${score.value}/100`).className = "score";
-  add($("result"), "p", `${score.band}, ${score.coveragePercent}% de cobertura${score.isPartial ? " (parcial)" : ""}`);
+  add($("result"), "p", `${score.band}, ${score.coveragePercent}% de cobertura${score.isPartial ? " (parcial)" : ""}${score.isProvisional ? ", provisório" : ""}`);
   addList("Categorias", score.categories.map((item) => `${item.category}: ${item.evaluated ? `${item.grade}/10` : "não avaliado"}`));
 }
 
@@ -107,6 +107,7 @@ function render(data) {
   if (dossier) {
     add($("result"), "p", dossier.statusReason);
     addList("Perguntas", dossier.questions);
+    addList("Informações pendentes", dossier.pendingInformation);
     renderScore(dossier.score);
     if (dossier.summary) { add($("result"), "h2", "Resumo"); add($("result"), "p", dossier.summary); }
     addList("Avarias observadas", dossier.damages.map((item) => `${item.evidenceId} · ${item.location}: ${item.damageType} (${item.severity}, confiança ${item.confidence})`));

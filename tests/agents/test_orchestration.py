@@ -9,7 +9,7 @@ def test_agent_chooses_specialist_and_builds_dossier_with_partial_score(harness)
     dossier = result["dossier"]
     assert result["status"] == "completed"
     assert harness.bodywork.calls == [["P1"]] and harness.interior.calls == []
-    assert dossier["score"]["value"] == 75 and dossier["score"]["band"] == "very_good"
+    assert dossier["score"]["value"] == 60 and dossier["score"]["band"] == "regular"
     assert dossier["score"]["isPartial"] is True and dossier["score"]["coveragePercent"] == 15
     graded = {item["category"]: item["evaluated"] for item in dossier["score"]["categories"]}
     assert graded["aesthetic"] is True and graded["mechanical"] is False
@@ -32,7 +32,7 @@ def test_agent_can_call_specialists_in_parallel_and_use_history(harness) -> None
 
     result = harness.submit([turn, conclude()])
     history = next(event for event in result["events"] if event["name"] == "get_vehicle_history")
-    assert history["output"][0]["score"] == 75
+    assert history["output"][0]["score"] == 60
     assert harness.interior.calls == [["P1"]]
 
 
