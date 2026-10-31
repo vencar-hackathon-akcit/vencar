@@ -1,5 +1,5 @@
 from vencar.application.ports import AssessmentRepository
-from vencar.domain.errors import AssessmentNotFoundError
+from vencar.domain.errors import ErrorCode, VencarError
 from vencar.domain.models import Assessment, AssessmentDetails, Photo
 
 
@@ -19,7 +19,7 @@ class ReadAssessments:
         assessment = self.repository.get(assessment_id, owner)
 
         if assessment is None:
-            raise AssessmentNotFoundError(assessment_id)
+            raise VencarError(ErrorCode.ASSESSMENT_NOT_FOUND)
 
         return AssessmentDetails(
             assessment=assessment,
@@ -31,10 +31,10 @@ class ReadAssessments:
     def photo(self, assessment_id: str, photo_id: str, owner: str) -> Photo:
         """Return a photo only to the owner of its assessment."""
         if self.repository.get(assessment_id, owner) is None:
-            raise AssessmentNotFoundError(assessment_id)
+            raise VencarError(ErrorCode.ASSESSMENT_NOT_FOUND)
 
         for photo in self.repository.list_photos(assessment_id):
             if photo.id == photo_id:
                 return photo
 
-        raise AssessmentNotFoundError(photo_id)
+        raise VencarError(ErrorCode.ASSESSMENT_NOT_FOUND)

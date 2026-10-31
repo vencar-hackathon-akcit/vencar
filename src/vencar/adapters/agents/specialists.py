@@ -8,7 +8,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import ValidationError
 
-from vencar.domain.errors import AgentFailureError
+from vencar.domain.errors import ErrorCode, VencarError
 from vencar.domain.models import (
     Category,
     Photo,
@@ -112,4 +112,6 @@ class ChatSpecialist:
 
             problem = "resposta vazia"
 
-        raise AgentFailureError(f"{self.name} nao produziu uma saida valida: {problem}")
+        raise VencarError(
+            ErrorCode.AGENT_FAILURE, f"{self.name} nao produziu uma saida valida: {problem}"
+        )

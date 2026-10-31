@@ -1,5 +1,5 @@
 from vencar.application.ports import AssessmentRepository, PhotoStorage
-from vencar.domain.errors import TooManyPhotosError
+from vencar.domain.errors import ErrorCode, VencarError
 from vencar.domain.models import Assessment, PhotoUpload, VehicleData
 
 MAX_PHOTOS = 10
@@ -18,7 +18,7 @@ class CreateAssessment:
     ) -> Assessment:
         """Validate the uploads first so that a rejected request creates nothing."""
         if len(uploads) > MAX_PHOTOS:
-            raise TooManyPhotosError(f"Envie no maximo {MAX_PHOTOS} fotos.")
+            raise VencarError(ErrorCode.TOO_MANY_PHOTOS, f"Envie no maximo {MAX_PHOTOS} fotos.")
 
         for upload in uploads:
             self.storage.validate(upload)

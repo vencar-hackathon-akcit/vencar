@@ -1,5 +1,3 @@
-from collections.abc import Callable
-
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -7,50 +5,19 @@ from fastapi import (
     File,
     Form,
     Header,
-    HTTPException,
-    Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 
 from vencar.adapters.api.schemas import AssessmentAccepted, AssessmentDetail
 from vencar.application.use_cases.answer_assessment import AnswerAssessment
 from vencar.application.use_cases.create_assessment import CreateAssessment
 from vencar.application.use_cases.read_assessments import ReadAssessments
 from vencar.application.use_cases.run_assessment import RunAssessment
-from vencar.domain.errors import (
-    AssessmentBusyError,
-    AssessmentNotFoundError,
-    InvalidPhotoError,
-    TooManyPhotosError,
-)
+from vencar.domain.errors import ErrorCode, VencarError
 from vencar.domain.models import Assessment, AssessmentStatus, PhotoUpload, VehicleData
 
 JPEG_MEDIA_TYPE = "image/jpeg"
-ERROR_STATUS = {
-    AssessmentNotFoundError: 404,
-    AssessmentBusyError: 409,
-    InvalidPhotoError: 415,
-    TooManyPhotosError: 413,
-}
-
-
-def error_message(error: Exception) -> str:
-    """Pick the message shown for a domain error."""
-    if isinstance(error, AssessmentNotFoundError):
-        return "Avaliacao nao encontrada."
-
-    if isinstance(error, AssessmentBusyError):
-        return "A avaliacao ainda esta em processamento."
-
-    return str(error)
-
-
-async def handle_domain_error(request: Request, error: Exception) -> JSONResponse:
-    """Translate a domain error into its HTTP response."""
-    return JSONResponse(
-        status_code=ERROR_STATUS[type(error)], content={"detail": error_message(error)}
-    )
 
 
 async def read_uploads(files: list[UploadFile]) -> list[PhotoUpload]:
@@ -75,7 +42,7 @@ def create_assessments_router(
         user = tokens.get(authorization.removeprefix("Bearer ").strip())
 
         if user is None:
-            raise HTTPException(status_code=401, detail="Token invalido.")
+            raise VencarError(ErrorCode.UNAUTHORIZED)
 
         return user
 
@@ -148,8 +115,3 @@ def create_assessments_router(
         )
 
     return router
-
-
-def domain_error_handlers() -> dict[type[Exception], Callable]:
-    """List the handlers the application must register."""
-    return dict.fromkeys(ERROR_STATUS, handle_domain_error)

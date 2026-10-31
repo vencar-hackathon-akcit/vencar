@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from vencar.adapters.agents.specialist_catalog import SPECIALISTS, SpecialistDefinition
 from vencar.adapters.agents.specialists import Specialist
 from vencar.application.ports import AssessmentRepository
-from vencar.domain.errors import AgentFailureError
+from vencar.domain.errors import ErrorCode, VencarError
 from vencar.domain.models import (
     AgentConclusion,
     AgentRequest,
@@ -61,9 +61,10 @@ def build_specialist_tool(
         unknown = [item for item in photo_ids if item not in photos]
 
         if unknown or not photo_ids:
-            raise AgentFailureError(
-                f"Fotos invalidas: {unknown or 'nenhuma informada'}. Disponiveis: {sorted(photos)}."
-            )
+            invalid = unknown or "nenhuma informada"
+            message = f"Fotos invalidas: {invalid}. Disponiveis: {sorted(photos)}."
+
+            raise VencarError(ErrorCode.AGENT_FAILURE, message)
 
         selected = [photos[item] for item in photo_ids]
 

@@ -1,6 +1,6 @@
 from vencar.application.ports import AssessmentRepository, PhotoStorage
 from vencar.application.use_cases.create_assessment import MAX_PHOTOS
-from vencar.domain.errors import AssessmentBusyError, AssessmentNotFoundError, TooManyPhotosError
+from vencar.domain.errors import ErrorCode, VencarError
 from vencar.domain.models import EventKind, EventName, NewEvent, PhotoUpload
 
 
@@ -24,12 +24,14 @@ class AnswerAssessment:
         assessment = self.repository.get(assessment_id, owner)
 
         if assessment is None:
-            raise AssessmentNotFoundError(assessment_id)
+            raise VencarError(ErrorCode.ASSESSMENT_NOT_FOUND)
 
         existing = len(self.repository.list_photos(assessment_id))
 
         if existing + len(uploads) > MAX_PHOTOS:
-            raise TooManyPhotosError(f"A avaliacao aceita no maximo {MAX_PHOTOS} fotos.")
+            raise VencarError(
+                ErrorCode.TOO_MANY_PHOTOS, f"A avaliacao aceita no maximo {MAX_PHOTOS} fotos."
+            )
 
         for upload in uploads:
             self.storage.validate(upload)
@@ -42,7 +44,7 @@ class AnswerAssessment:
         vehicle = assessment.vehicle.model_copy(update=updates)
 
         if not self.repository.begin_rerun(assessment_id, vehicle):
-            raise AssessmentBusyError(assessment_id)
+            raise VencarError(ErrorCode.ASSESSMENT_BUSY)
 
         for index, upload in enumerate(uploads, start=existing + 1):
             self.repository.add_photo(

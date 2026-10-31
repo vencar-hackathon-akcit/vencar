@@ -5,10 +5,8 @@ from vencar.adapters.agents.assessment_graph import LangGraphAssessmentAgent
 from vencar.adapters.agents.claude_models import create_claude_model
 from vencar.adapters.agents.specialist_catalog import create_specialists
 from vencar.adapters.agents.specialists import Specialist
-from vencar.adapters.api.assessments_controller import (
-    create_assessments_router,
-    domain_error_handlers,
-)
+from vencar.adapters.api.assessments_controller import create_assessments_router
+from vencar.adapters.api.error_handlers import register_error_handlers
 from vencar.adapters.database.sqlite_assessment_repository import (
     SqliteAssessmentRepository,
 )
@@ -46,7 +44,8 @@ def create_app(settings: Settings | None = None, agent: AssessmentAgent | None =
     repository.fail_interrupted()
     storage = LocalPhotoStorage(settings.vencar_data_dir / "photos")
     selected_agent = agent or create_real_agent(settings, repository)
-    app = FastAPI(title="Vencar API", exception_handlers=domain_error_handlers())
+    app = FastAPI(title="Vencar API")
+    register_error_handlers(app)
 
     app.add_middleware(
         CORSMiddleware,

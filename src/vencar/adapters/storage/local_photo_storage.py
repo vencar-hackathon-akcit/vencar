@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from vencar.domain.errors import InvalidPhotoError
+from vencar.domain.errors import ErrorCode, VencarError
 from vencar.domain.models import Photo, PhotoUpload
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
@@ -21,7 +21,7 @@ class LocalPhotoStorage:
     def validate(self, upload: PhotoUpload) -> None:
         """Reject uploads that are too large or are not fully readable images."""
         if len(upload.content) > MAX_UPLOAD_BYTES:
-            raise InvalidPhotoError(f"{upload.filename}: imagem acima de 15 MB.")
+            raise VencarError(ErrorCode.INVALID_PHOTO, f"{upload.filename}: imagem acima de 15 MB.")
 
         try:
             Image.open(io.BytesIO(upload.content)).load()
@@ -31,8 +31,8 @@ class LocalPhotoStorage:
             SyntaxError,
             Image.DecompressionBombError,
         ) as error:
-            raise InvalidPhotoError(
-                f"{upload.filename}: arquivo nao e uma imagem valida."
+            raise VencarError(
+                ErrorCode.INVALID_PHOTO, f"{upload.filename}: arquivo nao e uma imagem valida."
             ) from error
 
     def save(self, assessment_id: str, evidence_id: str, upload: PhotoUpload) -> Photo:
