@@ -1,6 +1,9 @@
+import pytest
 from langchain_core.messages import AIMessage
+from pydantic import ValidationError
 
-from support.builders import bodywork, call, conclude, findings
+from support.builders import bodywork, call, conclude, findings, photo
+from vencar.domain.models import PhotoAssessment, SpecialistFindings
 
 MISMATCH = {"status": "mismatch", "reason": "Painel de outra epoca", "evidence_ids": ["P1"]}
 
@@ -16,7 +19,9 @@ def test_missing_data_never_calls_any_agent(harness) -> None:
 def test_unusable_photo_discards_findings_and_requests_a_new_one(harness) -> None:
     """Findings tied only to a bad photo do not survive validation."""
     harness.bodywork.findings = findings(
-        photo_assessments=[{"evidence_id": "P1", "usable": False, "reason": "desfocada"}]
+        photo_assessments=[
+            {"evidence_id": "P1", "usable": False, "reason": "desfocada", "shows_car": True}
+        ]
     )
 
     result = harness.submit([bodywork(), conclude()])
@@ -64,7 +69,9 @@ def test_vehicle_mismatch_needs_a_usable_photo(harness) -> None:
     """A mismatch based only on an unusable photo does not count as a conflict."""
     harness.bodywork.findings = findings(
         vehicle_match=MISMATCH,
-        photo_assessments=[{"evidence_id": "P1", "usable": False, "reason": "escura"}],
+        photo_assessments=[
+            {"evidence_id": "P1", "usable": False, "reason": "escura", "shows_car": True}
+        ],
     )
 
     result = harness.submit([bodywork(), conclude()])
@@ -126,3 +133,54 @@ def test_identity_conflict_is_not_repeated(harness) -> None:
     dossier = harness.submit([bodywork(), conclude()])["dossier"]
 
     assert [item["description"] for item in dossier["conflicts"]] == ["Painel de outra epoca"]
+
+
+NOT_A_CAR = {"evidence_id": "P1", "usable": True, "reason": "E uma moto", "shows_car": False}
+
+
+def test_photo_without_a_car_is_rejected(harness) -> None:
+    """A non-car photo gets no findings, conflict or score, even if marked usable."""
+    harness.bodywork.findings = findings(photo_assessments=[NOT_A_CAR], vehicle_match=MISMATCH)
+
+    result = harness.submit([bodywork(), conclude()])
+    dossier = result["dossier"]
+
+    assert result["status"] == "needs_input"
+    assert dossier["questions"] == [
+        "A Vencar avalia somente carros. Envie fotos do carro a ser avaliado."
+    ]
+    assert dossier["damages"] == [] and dossier["hypotheses"] == []
+    assert dossier["conflicts"] == [] and dossier["score"] is None
+
+
+def test_non_car_photo_is_ignored_when_another_photo_shows_a_car(harness) -> None:
+    """Only the non-car photo is dropped from a mixed submission."""
+    damage = findings()["damages"][0]
+    other = {"evidence_id": "P2", "usable": True, "reason": "E um carro", "shows_car": True}
+    harness.bodywork.findings = findings(
+        photo_assessments=[NOT_A_CAR, other],
+        damages=[damage, {**damage, "evidence_id": "P2", "location": "porta"}],
+        hypotheses=[],
+    )
+
+    turn = AIMessage(
+        content="",
+        tool_calls=[call("analyze_bodywork", {"photo_ids": ["P1", "P2"], "focus": "a"})],
+    )
+
+    result = harness.submit([turn, conclude()], files=[photo(), photo()])
+    dossier = result["dossier"]
+
+    assert result["status"] == "completed"
+    assert [item["evidenceId"] for item in dossier["damages"]] == ["P2"]
+    assert "Foto P1 ignorada por nao mostrar um carro." in dossier["warnings"]
+
+
+def test_specialists_must_answer_the_car_check() -> None:
+    """The model cannot skip the car check, and older saved verdicts still load."""
+    missing = {"evidence_id": "P1", "usable": True, "reason": "ok"}
+
+    with pytest.raises(ValidationError):
+        SpecialistFindings(**findings(photo_assessments=[missing]))
+
+    assert PhotoAssessment(**missing).shows_car is True

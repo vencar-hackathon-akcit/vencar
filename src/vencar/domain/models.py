@@ -142,6 +142,13 @@ class PhotoAssessment(DomainModel):
     evidence_id: str
     usable: bool
     reason: str
+    shows_car: bool = True
+
+
+class SpecialistPhotoAssessment(PhotoAssessment):
+    """Photo verdict from a specialist, which must always answer the car check."""
+
+    shows_car: bool
 
 
 class Damage(DomainModel):
@@ -193,7 +200,7 @@ class SpecialistFindings(DomainModel):
 
     vehicle_match: VehicleMatch
 
-    photo_assessments: list[PhotoAssessment]
+    photo_assessments: list[SpecialistPhotoAssessment]
     damages: list[Damage]
     hypotheses: list[Hypothesis]
     conflicts: list[Conflict]

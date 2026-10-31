@@ -18,6 +18,8 @@ from vencar.domain.models import (
 from vencar.domain.scoring import calculate_score
 
 DEFAULT_HUMAN_REASON = "Resultados gerados por IA precisam de validacao de um profissional."
+NOT_A_CAR_QUESTION = "A Vencar avalia somente carros. Envie fotos do carro a ser avaliado."
+NOT_A_CAR_REASON = "As fotos recebidas nao mostram um carro."
 NEW_PHOTO_QUESTION = "Envie novas fotos nitidas e bem iluminadas do veiculo."
 CONFLICT_REASON = "Ha informacoes conflitantes que precisam ser esclarecidas."
 NEEDS_ANSWER_REASON = "O agente precisa de mais informacoes para concluir."
@@ -75,6 +77,38 @@ class DossierRules:
             recommendation="Complete os dados para iniciar a avaliacao.",
             human_validation_reason=DEFAULT_HUMAN_REASON,
         )
+
+    @staticmethod
+    def find_non_car_photos(reports: list[SpecialistReport], photo_ids: set[str]) -> set[str]:
+        """Find photos that no specialist recognized as showing a car."""
+        verdicts = [
+            item
+            for report in reports
+            for item in report.findings.photo_assessments
+            if item.evidence_id in photo_ids
+        ]
+
+        seen_as_car = {item.evidence_id for item in verdicts if item.shows_car}
+
+        return {item.evidence_id for item in verdicts} - seen_as_car
+
+    @staticmethod
+    def reject_non_car_photos(
+        reports: list[SpecialistReport], non_car: set[str]
+    ) -> list[SpecialistReport]:
+        """Mark non-car photos as unusable, whatever the specialists said about them."""
+        rejected = []
+
+        for report in reports:
+            assessments = [
+                item.model_copy(update={"usable": False}) if item.evidence_id in non_car else item
+                for item in report.findings.photo_assessments
+            ]
+
+            findings = report.findings.model_copy(update={"photo_assessments": assessments})
+            rejected.append(report.model_copy(update={"findings": findings}))
+
+        return rejected
 
     @staticmethod
     def merge_photo_assessments(
@@ -188,8 +222,12 @@ class DossierRules:
         conflicts: list[Conflict],
         conclusion: AgentConclusion | None,
         evaluated: set[Category],
+        non_car: set[str],
     ) -> tuple[AssessmentStatus, str]:
         """Decide the final status, checking the most blocking situations first."""
+        if photo_ids and photo_ids == non_car:
+            return AssessmentStatus.NEEDS_INPUT, NOT_A_CAR_REASON
+
         if not reports and conclusion and conclusion.questions:
             return AssessmentStatus.NEEDS_INPUT, NEEDS_ANSWER_REASON
 
@@ -217,8 +255,12 @@ class DossierRules:
         unusable: set[str],
         conflicts: list[Conflict],
         has_reports: bool,
+        non_car: set[str],
     ) -> list[str]:
         """Ask what blocks the assessment, with required questions replacing the agent's own."""
+        if photo_ids and photo_ids == non_car:
+            return [NOT_A_CAR_QUESTION]
+
         if has_reports and DossierRules.all_photos_unusable(photo_ids, unusable):
             return [NEW_PHOTO_QUESTION]
 
@@ -258,11 +300,16 @@ class DossierRules:
         evidence = DossierRules.collect_evidence(request)
         known = {item.id for item in evidence}
         photo_ids = {photo.evidence_id for photo in request.photos}
+        non_car = DossierRules.find_non_car_photos(reports, photo_ids)
+        reports = DossierRules.reject_non_car_photos(reports, non_car)
         assessments = DossierRules.merge_photo_assessments(reports, photo_ids)
         unusable = {key for key, item in assessments.items() if not item.usable}
 
         damages = DossierRules.validate_damages(reports, photo_ids, unusable)
         hypotheses = DossierRules.validate_hypotheses(reports, known, unusable)
+
+        if photo_ids and photo_ids == non_car:
+            hypotheses = Validated([], [])
         mismatch = DossierRules.find_vehicle_mismatch(reports, photo_ids, unusable)
         reported = [
             conflict
@@ -275,11 +322,11 @@ class DossierRules:
         evaluated = DossierRules.find_evaluated_categories(reports, photo_ids)
 
         status, reason = DossierRules.decide_status(
-            reports, photo_ids, unusable, conflicts, conclusion, evaluated
+            reports, photo_ids, unusable, conflicts, conclusion, evaluated, non_car
         )
         no_specialist = [NO_SPECIALIST_REASON] if not reports else []
         questions = DossierRules.build_questions(
-            conclusion, photo_ids, unusable, conflicts, bool(reports)
+            conclusion, photo_ids, unusable, conflicts, bool(reports), non_car
         )
         completed = status == AssessmentStatus.COMPLETED
 
@@ -295,7 +342,13 @@ class DossierRules:
             questions=questions,
             pending_information=DossierRules.build_pending_information(conclusion, questions),
             limitations=limitations,
-            warnings=[*warnings, *damages.warnings, *hypotheses.warnings, *no_specialist],
+            warnings=[
+                *warnings,
+                *damages.warnings,
+                *hypotheses.warnings,
+                *no_specialist,
+                *(f"Foto {item} ignorada por nao mostrar um carro." for item in sorted(non_car)),
+            ],
             score=calculate_score(damages.items, evaluated) if completed else None,
             summary=conclusion.summary if conclusion else "",
             recommendation=conclusion.recommendation if conclusion else "",
