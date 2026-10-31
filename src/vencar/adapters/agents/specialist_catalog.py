@@ -59,16 +59,20 @@ ORCHESTRATOR_PROMPT = build_orchestrator_prompt(
 )
 
 
-def create_specialists(
-    model_factory: Callable[[], BaseChatModel],
-) -> dict[SpecialistName, Specialist]:
-    """Create one agent for each specialist in the catalog."""
-    return {
-        item.name: ChatSpecialist(
-            item.name,
-            model_factory(),
-            build_specialist_prompt(item.identity),
-            set(item.allowed_categories),
-        )
-        for item in SPECIALISTS
-    }
+class SpecialistCatalog:
+    """Create agents from the specialist definitions."""
+
+    @staticmethod
+    def create_specialists(
+        model_factory: Callable[[], BaseChatModel],
+    ) -> dict[SpecialistName, Specialist]:
+        """Create one agent for each specialist in the catalog."""
+        return {
+            item.name: ChatSpecialist(
+                item.name,
+                model_factory(),
+                build_specialist_prompt(item.identity),
+                set(item.allowed_categories),
+            )
+            for item in SPECIALISTS
+        }

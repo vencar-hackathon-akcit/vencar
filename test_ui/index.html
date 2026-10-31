@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vencar - Teste do agente</title>
+<style>
+  body { max-width: 720px; margin: 24px auto; padding: 0 16px; font: 15px/1.5 system-ui, sans-serif; color: #06242b; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 15px; margin: 20px 0 6px; }
+  label { display: block; margin-top: 10px; font-size: 13px; }
+  input, textarea, select { width: 100%; box-sizing: border-box; padding: 8px; font: inherit; }
+  button { margin-top: 12px; padding: 9px 14px; font: inherit; cursor: pointer; }
+  button:disabled { cursor: wait; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+  .error { color: #a32d2d; }
+  .score { font-size: 28px; font-weight: 600; }
+  pre { overflow-x: auto; background: #f1f4f3; padding: 10px; font-size: 12px; }
+  li { overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<h1>Vencar - Teste do agente</h1>
+<label for="token">Usuário de teste</label>
+<select id="token">
+  <option value="teste-usuario-a">Usuário A</option>
+  <option value="teste-usuario-b">Usuário B</option>
+</select>
+<form id="create">
+  <div class="row">
+    <div><label for="make">Marca</label><input id="make" name="make"></div>
+    <div><label for="model">Modelo</label><input id="model" name="model"></div>
+    <div><label for="year">Ano</label><input id="year" name="year"></div>
+    <div><label for="plate">Placa</label><input id="plate" name="plate"></div>
+    <div><label for="mileage">Km</label><input id="mileage" name="mileage"></div>
+  </div>
+  <label for="description">Relato</label>
+  <textarea id="description" name="description" rows="3"></textarea>
+  <label for="photos">Fotos</label>
+  <input id="photos" name="photos" type="file" accept="image/*" multiple>
+  <button id="send">Analisar</button>
+</form>
+<p id="error" class="error" role="alert"></p>
+<section id="result" aria-live="polite"></section>
+<form id="answer" hidden>
+  <h2>Responder ao agente</h2>
+  <label for="answer-text">Resposta</label>
+  <textarea id="answer-text" name="answer" rows="2"></textarea>
+  <div class="row">
+    <div><label for="answer-make">Marca</label><input id="answer-make" name="make"></div>
+    <div><label for="answer-model">Modelo</label><input id="answer-model" name="model"></div>
+    <div><label for="answer-year">Ano</label><input id="answer-year" name="year"></div>
+    <div><label for="answer-plate">Placa</label><input id="answer-plate" name="plate"></div>
+  </div>
+  <label for="answer-photos">Novas fotos</label>
+  <input id="answer-photos" name="photos" type="file" accept="image/*" multiple>
+  <button>Enviar e reanalisar</button>
+</form>
+<script>
+const API = "/api/v1/assessments";
+const POLL_INTERVAL_MS = 1500;
+const $ = (id) => document.getElementById(id);
+let currentId = null;
+let timer = null;
+
+function headers() {
+  return { Authorization: `Bearer ${$("token").value}` };
+}
+
+async function request(url, options = {}) {
+  const response = await fetch(url, { ...options, headers: headers() });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.message);
+  return body;
+}
+
+function add(parent, tag, text) {
+  const element = document.createElement(tag);
+  element.textContent = text;
+  parent.append(element);
+  return element;
+}
+
+function addList(title, items) {
+  if (!items || !items.length) return;
+  add($("result"), "h2", title);
+  const list = add($("result"), "ul", "");
+  items.forEach((item) => add(list, "li", item));
+}
+
+function renderScore(score) {
+  add($("result"), "h2", "Score");
+  if (!score) {
+    add($("result"), "p", "Sem score: não há evidência suficiente.");
+    return;
+  }
+  add($("result"), "div", `${score.value}/100`).className = "score";
+  add($("result"), "p", `${score.band}, ${score.coveragePercent}% de cobertura${score.isPartial ? " (parcial)" : ""}`);
+  addList("Categorias", score.categories.map((item) => `${item.category}: ${item.evaluated ? `${item.grade}/10` : "não avaliado"}`));
+}
+
+function render(data) {
+  $("result").replaceChildren();
+  add($("result"), "h2", "Status");
+  add($("result"), "p", data.status);
+  if (data.error) add($("result"), "p", data.error).className = "error";
+  const dossier = data.dossier;
+  if (dossier) {
+    add($("result"), "p", dossier.statusReason);
+    addList("Perguntas", dossier.questions);
+    renderScore(dossier.score);
+    if (dossier.summary) { add($("result"), "h2", "Resumo"); add($("result"), "p", dossier.summary); }
+    addList("Avarias observadas", dossier.damages.map((item) => `${item.evidenceId} · ${item.location}: ${item.damageType} (${item.severity}, confiança ${item.confidence})`));
+    addList("Hipóteses da IA", dossier.hypotheses.map((item) => `${item.description} (confiança ${item.confidence})`));
+    addList("Limitações", dossier.limitations);
+    addList("Alertas", dossier.warnings);
+    if (dossier.recommendation) { add($("result"), "h2", "Recomendação"); add($("result"), "p", dossier.recommendation); }
+    add($("result"), "p", `Validação humana: ${dossier.humanValidationReason}`);
+  }
+  add($("result"), "h2", `Histórico (íntegro: ${data.historyIntact ? "sim" : "não"})`);
+  add($("result"), "pre", data.events.map((item) => `${item.run} · ${item.kind} · ${item.name}`).join("\n"));
+  const details = add($("result"), "details", "");
+  add(details, "summary", "JSON completo");
+  add(details, "pre", JSON.stringify(data, null, 2));
+  $("answer").hidden = data.status !== "needs_input";
+}
+
+async function poll(id) {
+  clearTimeout(timer);
+  try {
+    const data = await request(`${API}/${id}`);
+    if (id !== currentId) return;
+    render(data);
+    if (data.status === "processing") timer = setTimeout(() => poll(id), POLL_INTERVAL_MS);
+  } catch (error) {
+    $("error").textContent = error.message;
+  }
+}
+
+async function submit(event, url) {
+  event.preventDefault();
+  $("error").textContent = "";
+  const button = event.target.querySelector("button");
+  button.disabled = true;
+  try {
+    const body = await request(url(), { method: "POST", body: new FormData(event.target) });
+    currentId = body.id;
+    $("answer").hidden = true;
+    event.target.reset();
+    poll(currentId);
+  } catch (error) {
+    $("error").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+$("create").addEventListener("submit", (event) => submit(event, () => API));
+$("answer").addEventListener("submit", (event) => submit(event, () => `${API}/${currentId}/answers`));
+</script>
+</body>
+</html>

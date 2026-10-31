@@ -1,5 +1,5 @@
 from vencar.adapters.agents.claude_models import create_claude_model
-from vencar.adapters.agents.specialist_catalog import create_specialists
+from vencar.adapters.agents.specialist_catalog import SpecialistCatalog
 from vencar.domain.models import SpecialistName
 
 
@@ -10,5 +10,5 @@ def test_real_model_request_has_the_expected_shape() -> None:
     assert payload["thinking"]["type"] == "adaptive" and payload["fallbacks"] == "default"
     assert payload["output_config"]["effort"] == "high"
     assert "temperature" not in payload
-    specialists = create_specialists(lambda: model)
+    specialists = SpecialistCatalog.create_specialists(lambda: model)
     assert set(specialists) == set(SpecialistName)

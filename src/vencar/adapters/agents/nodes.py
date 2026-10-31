@@ -6,15 +6,10 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import StructuredTool
 
 from vencar.adapters.agents.specialist_catalog import ORCHESTRATOR_PROMPT
-from vencar.adapters.agents.specialists import build_case_content
+from vencar.adapters.agents.specialists import CaseContentBuilder
 from vencar.adapters.agents.state import MAX_TOOL_WORKERS, AgentState
 from vencar.application.ports import EventSink
-from vencar.domain.dossier_rules import (
-    build_dossier,
-    build_missing_data_dossier,
-    collect_evidence,
-    find_missing_inputs,
-)
+from vencar.domain.dossier_rules import DossierRules
 from vencar.domain.models import (
     AgentConclusion,
     AgentRequest,
@@ -37,32 +32,6 @@ class ToolOutcome(NamedTuple):
     error: str | None
 
 
-def describe_turn(message: AIMessage) -> str:
-    """Extract the reasoning the model chose to show from one of its turns."""
-    if isinstance(message.content, str):
-        return message.content
-
-    parts = [
-        block.get("text") or block.get("thinking") or ""
-        for block in message.content
-        if isinstance(block, dict) and block.get("type") in ("text", "thinking")
-    ]
-
-    return "\n".join(part for part in parts if part)
-
-
-def to_tool_message(outcome: ToolOutcome) -> ToolMessage:
-    """Tell the orchestrator how a tool call ended, including failures."""
-    call_id = outcome.call["id"]
-
-    if outcome.error:
-        return ToolMessage(content=f"Erro: {outcome.error}", tool_call_id=call_id, status="error")
-
-    content = to_json(to_plain_data(outcome.result))
-
-    return ToolMessage(content=content, tool_call_id=call_id)
-
-
 class AssessmentNodes:
     """Steps of the agent graph for one assessment run."""
 
@@ -81,8 +50,8 @@ class AssessmentNodes:
 
     def intake(self, state: AgentState) -> AgentState:
         """Register the evidence and detect missing mandatory inputs."""
-        missing = find_missing_inputs(self.request)
-        evidence_ids = [item.id for item in collect_evidence(self.request)]
+        missing = DossierRules.find_missing_inputs(self.request)
+        evidence_ids = [item.id for item in DossierRules.collect_evidence(self.request)]
 
         self.sink(
             NewEvent(
@@ -105,7 +74,7 @@ class AssessmentNodes:
             )
         )
 
-        return {"dossier": build_missing_data_dossier(self.request, state["missing"])}
+        return {"dossier": DossierRules.build_missing_data_dossier(self.request, state["missing"])}
 
     def prepare_case(self, state: AgentState) -> AgentState:
         """Give the orchestrator the case: photos, description and answers."""
@@ -118,7 +87,7 @@ class AssessmentNodes:
             "photo_ids": [photo.evidence_id for photo in self.request.photos],
         }
 
-        content = build_case_content(self.request.photos, case)
+        content = CaseContentBuilder.build_case_content(self.request.photos, case)
 
         return {
             "messages": [SystemMessage(content=ORCHESTRATOR_PROMPT), HumanMessage(content=content)],
@@ -136,7 +105,7 @@ class AssessmentNodes:
                 kind=EventKind.DECISION,
                 name=EventName.ORCHESTRATOR,
                 output={
-                    "reasoning": describe_turn(message),
+                    "reasoning": self.describe_turn(message),
                     "tools": [call["name"] for call in message.tool_calls],
                 },
             )
@@ -178,7 +147,7 @@ class AssessmentNodes:
         conclusions = [item for item in results if isinstance(item, AgentConclusion)]
 
         return {
-            "messages": [to_tool_message(item) for item in outcomes],
+            "messages": [self.to_tool_message(item) for item in outcomes],
             "reports": [item for item in results if isinstance(item, SpecialistReport)],
             "warnings": [
                 f"Falha em {item.call['name']}: {item.error}" for item in outcomes if item.error
@@ -198,7 +167,9 @@ class AssessmentNodes:
         if conclusion is None:
             warnings = [*warnings, NO_CONCLUSION_WARNING]
 
-        dossier = build_dossier(self.request, state.get("reports", []), conclusion, warnings)
+        dossier = DossierRules.build_dossier(
+            self.request, state.get("reports", []), conclusion, warnings
+        )
 
         self.sink(
             NewEvent(
@@ -213,3 +184,31 @@ class AssessmentNodes:
         )
 
         return {"dossier": dossier}
+
+    @staticmethod
+    def describe_turn(message: AIMessage) -> str:
+        """Extract the reasoning the model chose to show from one of its turns."""
+        if isinstance(message.content, str):
+            return message.content
+
+        parts = [
+            block.get("text") or block.get("thinking") or ""
+            for block in message.content
+            if isinstance(block, dict) and block.get("type") in ("text", "thinking")
+        ]
+
+        return "\n".join(part for part in parts if part)
+
+    @staticmethod
+    def to_tool_message(outcome: ToolOutcome) -> ToolMessage:
+        """Tell the orchestrator how a tool call ended, including failures."""
+        call_id = outcome.call["id"]
+
+        if outcome.error:
+            return ToolMessage(
+                content=f"Erro: {outcome.error}", tool_call_id=call_id, status="error"
+            )
+
+        content = to_json(to_plain_data(outcome.result))
+
+        return ToolMessage(content=content, tool_call_id=call_id)

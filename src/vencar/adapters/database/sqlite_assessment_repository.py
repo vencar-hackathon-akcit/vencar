@@ -69,24 +69,6 @@ END;
 """
 
 
-def event_hash(
-    previous_hash: str,
-    assessment_id: str,
-    run: int,
-    kind: str,
-    name: str,
-    input_json: str,
-    output_json: str,
-    created_at: str,
-) -> str:
-    """Hash an event together with the previous one, forming a chain."""
-    payload = json.dumps(
-        [previous_hash, assessment_id, run, kind, name, input_json, output_json, created_at]
-    )
-
-    return sha256_hex(payload)
-
-
 class SqliteAssessmentRepository:
     """Outbound adapter that implements the repository port with SQLite."""
 
@@ -210,7 +192,7 @@ class SqliteAssessmentRepository:
 
             previous = last["hash"] if last else GENESIS_HASH
 
-            digest = event_hash(
+            digest = self.event_hash(
                 previous, assessment_id, run, kind, name, input_json, output_json, created_at
             )
 
@@ -265,7 +247,7 @@ class SqliteAssessmentRepository:
         previous = GENESIS_HASH
 
         for row in rows:
-            expected = event_hash(
+            expected = self.event_hash(
                 previous,
                 assessment_id,
                 row["run"],
@@ -361,3 +343,21 @@ class SqliteAssessmentRepository:
             ).fetchall()
 
         return [self.to_assessment(row) for row in rows]
+
+    @staticmethod
+    def event_hash(
+        previous_hash: str,
+        assessment_id: str,
+        run: int,
+        kind: str,
+        name: str,
+        input_json: str,
+        output_json: str,
+        created_at: str,
+    ) -> str:
+        """Hash an event together with the previous one, forming a chain."""
+        payload = json.dumps(
+            [previous_hash, assessment_id, run, kind, name, input_json, output_json, created_at]
+        )
+
+        return sha256_hex(payload)

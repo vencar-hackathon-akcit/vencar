@@ -1,9 +1,12 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from vencar.adapters.agents.assessment_graph import LangGraphAssessmentAgent
 from vencar.adapters.agents.claude_models import create_claude_model
-from vencar.adapters.agents.specialist_catalog import create_specialists
+from vencar.adapters.agents.specialist_catalog import SpecialistCatalog
 from vencar.adapters.agents.specialists import Specialist
 from vencar.adapters.api.assessments_controller import create_assessments_router
 from vencar.adapters.api.error_handlers import register_error_handlers
@@ -19,6 +22,8 @@ from vencar.application.use_cases.run_assessment import RunAssessment
 from vencar.config import Settings
 from vencar.domain.models import SpecialistName
 
+TEST_UI_DIR = Path(__file__).resolve().parents[2] / "test_ui"
+
 
 def create_real_agent(
     settings: Settings, repository: SqliteAssessmentRepository
@@ -31,7 +36,7 @@ def create_real_agent(
 
     def specialist_factory() -> dict[SpecialistName, Specialist]:
         """Create the specialist agents when a run starts."""
-        return create_specialists(model_factory)
+        return SpecialistCatalog.create_specialists(model_factory)
 
     return LangGraphAssessmentAgent(model_factory, specialist_factory, repository)
 
@@ -63,6 +68,9 @@ def create_app(settings: Settings | None = None, agent: AssessmentAgent | None =
             RunAssessment(repository, selected_agent),
         )
     )
+
+    if TEST_UI_DIR.is_dir():
+        app.mount("/test-ui", StaticFiles(directory=TEST_UI_DIR, html=True), name="test-ui")
 
     @app.get("/health")
     def health() -> dict[str, str]:

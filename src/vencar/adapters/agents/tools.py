@@ -38,92 +38,93 @@ class ConclusionArgs(BaseModel):
     )
 
 
-def summarize_previous_assessment(assessment: Assessment) -> dict:
-    """Keep only what the orchestrator needs from an earlier assessment."""
-    dossier = assessment.dossier
+class AssessmentTools:
+    """Tools the orchestrator can choose from for one assessment."""
 
-    return {
-        "date": assessment.created_at.isoformat(),
-        "status": assessment.status,
-        "score": dossier.score.value if dossier and dossier.score else None,
-        "damages": [item.model_dump(mode="json") for item in dossier.damages] if dossier else [],
-    }
+    def __init__(
+        self,
+        request: AgentRequest,
+        specialists: dict[SpecialistName, Specialist],
+        repository: AssessmentRepository,
+    ) -> None:
+        """Receive what the tools need for this case."""
+        self.request = request
+        self.specialists = specialists
+        self.repository = repository
 
+    @staticmethod
+    def summarize_previous_assessment(assessment: Assessment) -> dict:
+        """Keep only what the orchestrator needs from an earlier assessment."""
+        dossier = assessment.dossier
 
-def build_specialist_tool(
-    definition: SpecialistDefinition, request: AgentRequest, specialist: Specialist
-) -> StructuredTool:
-    """Expose a specialist agent as a tool the orchestrator can choose."""
-    photos = {photo.evidence_id: photo for photo in request.photos}
+        return {
+            "date": assessment.created_at.isoformat(),
+            "status": assessment.status,
+            "score": dossier.score.value if dossier and dossier.score else None,
+            "damages": [item.model_dump(mode="json") for item in dossier.damages]
+            if dossier
+            else [],
+        }
 
-    def call_specialist(photo_ids: list[str], focus: str) -> SpecialistReport:
-        """Run the specialist on the selected photos."""
-        unknown = [item for item in photo_ids if item not in photos]
+    def build_specialist_tool(self, definition: SpecialistDefinition) -> StructuredTool:
+        """Expose a specialist agent as a tool the orchestrator can choose."""
+        photos = {photo.evidence_id: photo for photo in self.request.photos}
+        specialist = self.specialists[definition.name]
 
-        if unknown or not photo_ids:
-            invalid = unknown or "nenhuma informada"
-            message = f"Fotos invalidas: {invalid}. Disponiveis: {sorted(photos)}."
+        def call_specialist(photo_ids: list[str], focus: str) -> SpecialistReport:
+            """Run the specialist on the selected photos."""
+            unknown = [item for item in photo_ids if item not in photos]
 
-            raise VencarError(ErrorCode.AGENT_FAILURE, message)
+            if unknown or not photo_ids:
+                invalid = unknown or "nenhuma informada"
+                message = f"Fotos invalidas: {invalid}. Disponiveis: {sorted(photos)}."
 
-        selected = [photos[item] for item in photo_ids]
+                raise VencarError(ErrorCode.AGENT_FAILURE, message)
 
-        return specialist.inspect(request.vehicle, request.description, selected, focus)
+            selected = [photos[item] for item in photo_ids]
 
-    return StructuredTool.from_function(
-        call_specialist,
-        name=definition.tool_name,
-        description=definition.tool_description,
-        args_schema=SpecialistArgs,
-    )
+            return specialist.inspect(
+                self.request.vehicle, self.request.description, selected, focus
+            )
 
-
-def build_history_tool(request: AgentRequest, repository: AssessmentRepository) -> StructuredTool:
-    """Expose the earlier assessments of the same plate as a tool."""
-
-    def get_vehicle_history() -> list[dict]:
-        """Consulta as avaliacoes anteriores deste usuario para a mesma placa."""
-        previous = repository.previous_dossiers(
-            request.vehicle.plate, request.owner, request.assessment_id
+        return StructuredTool.from_function(
+            call_specialist,
+            name=definition.tool_name,
+            description=definition.tool_description,
+            args_schema=SpecialistArgs,
         )
 
-        return [summarize_previous_assessment(item) for item in previous]
+    def get_vehicle_history(self) -> list[dict]:
+        """Consulta as avaliacoes anteriores deste usuario para a mesma placa."""
+        previous = self.repository.previous_dossiers(
+            self.request.vehicle.plate, self.request.owner, self.request.assessment_id
+        )
 
-    return StructuredTool.from_function(get_vehicle_history, args_schema=HistoryArgs)
+        return [self.summarize_previous_assessment(item) for item in previous]
 
+    @staticmethod
+    def submit_conclusion(
+        summary: str,
+        recommendation: str,
+        needs_user_input: bool,
+        questions: list[str],
+        requires_in_person_inspection: bool,
+        inspection_reason: str,
+    ) -> AgentConclusion:
+        """Registra a posicao final do orquestrador e encerra a investigacao."""
+        return AgentConclusion(
+            summary=summary,
+            recommendation=recommendation,
+            needs_user_input=needs_user_input,
+            questions=questions,
+            requires_in_person_inspection=requires_in_person_inspection,
+            inspection_reason=inspection_reason,
+        )
 
-def submit_conclusion(
-    summary: str,
-    recommendation: str,
-    needs_user_input: bool,
-    questions: list[str],
-    requires_in_person_inspection: bool,
-    inspection_reason: str,
-) -> AgentConclusion:
-    """Registra a posicao final do orquestrador e encerra a investigacao."""
-    return AgentConclusion(
-        summary=summary,
-        recommendation=recommendation,
-        needs_user_input=needs_user_input,
-        questions=questions,
-        requires_in_person_inspection=requires_in_person_inspection,
-        inspection_reason=inspection_reason,
-    )
-
-
-def build_tools(
-    request: AgentRequest,
-    specialists: dict[SpecialistName, Specialist],
-    repository: AssessmentRepository,
-) -> list[StructuredTool]:
-    """Create the tools the orchestrator can choose from for this case."""
-    specialist_tools = [
-        build_specialist_tool(definition, request, specialists[definition.name])
-        for definition in SPECIALISTS
-    ]
-
-    return [
-        *specialist_tools,
-        build_history_tool(request, repository),
-        StructuredTool.from_function(submit_conclusion, args_schema=ConclusionArgs),
-    ]
+    def build(self) -> list[StructuredTool]:
+        """Create every tool available to the orchestrator."""
+        return [
+            *(self.build_specialist_tool(definition) for definition in SPECIALISTS),
+            StructuredTool.from_function(self.get_vehicle_history, args_schema=HistoryArgs),
+            StructuredTool.from_function(self.submit_conclusion, args_schema=ConclusionArgs),
+        ]

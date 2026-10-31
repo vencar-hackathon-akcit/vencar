@@ -22,31 +22,6 @@ from vencar.utils.serialization import to_json
 MAX_ATTEMPTS = 2
 
 
-def photo_blocks(photos: list[Photo]) -> list[dict]:
-    """Build labelled image blocks so each photo can be cited by its evidence id."""
-    blocks: list[dict] = []
-
-    for photo in photos:
-        data = base64.standard_b64encode(Path(photo.path).read_bytes()).decode("utf-8")
-        blocks.append({"type": "text", "text": f"Evidencia {photo.evidence_id} (foto):"})
-
-        blocks.append(
-            {
-                "type": "image",
-                "source": {"type": "base64", "media_type": JPEG_MEDIA_TYPE, "data": data},
-            }
-        )
-
-    return blocks
-
-
-def build_case_content(photos: list[Photo], case: dict) -> list[dict]:
-    """Combine the photos and the case data into one message for a model."""
-    case_text = "Dados do caso:\n" + to_json(case)
-
-    return [*photo_blocks(photos), {"type": "text", "text": case_text}]
-
-
 class Specialist(Protocol):
     """Agent that inspects photos within one area of expertise."""
 
@@ -93,7 +68,7 @@ class ChatSpecialist:
         """Call the model, retrying once when the output is not valid."""
         case = {"vehicle": vehicle.model_dump(), "E1_description": description, "focus": focus}
 
-        content = build_case_content(photos, case)
+        content = CaseContentBuilder.build_case_content(photos, case)
 
         messages = [SystemMessage(content=self.prompt), HumanMessage(content=content)]
         problem = ""
@@ -115,3 +90,32 @@ class ChatSpecialist:
         raise VencarError(
             ErrorCode.AGENT_FAILURE, f"{self.name} nao produziu uma saida valida: {problem}"
         )
+
+
+class CaseContentBuilder:
+    """Build the labelled evidence content sent to a model."""
+
+    @staticmethod
+    def photo_blocks(photos: list[Photo]) -> list[dict]:
+        """Build labelled image blocks so each photo can be cited by its evidence id."""
+        blocks: list[dict] = []
+
+        for photo in photos:
+            data = base64.standard_b64encode(Path(photo.path).read_bytes()).decode("utf-8")
+            blocks.append({"type": "text", "text": f"Evidencia {photo.evidence_id} (foto):"})
+
+            blocks.append(
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": JPEG_MEDIA_TYPE, "data": data},
+                }
+            )
+
+        return blocks
+
+    @staticmethod
+    def build_case_content(photos: list[Photo], case: dict) -> list[dict]:
+        """Combine the photos and the case data into one message for a model."""
+        case_text = "Dados do caso:\n" + to_json(case)
+
+        return [*CaseContentBuilder.photo_blocks(photos), {"type": "text", "text": case_text}]
